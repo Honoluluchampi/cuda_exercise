@@ -36,7 +36,7 @@ void sum_array_on_host(float* a, float* b, float* c, const int n)
 // this function is called by all thread parallely
 __global__ void sum_array_on_gpu(float* a, float* b, float* c)
 {
-  int i = threadIdx.x;
+  int i = blockIdx.x * blockDim.x + threadIdx.x;
   c[i] = a[i] + b[i];
 }
 
