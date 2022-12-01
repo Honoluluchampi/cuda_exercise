@@ -1,3 +1,5 @@
+// original
+#include "../utils/utils.hpp"
 // std
 #include <stdio.h>
 #include <time.h>
@@ -47,17 +49,29 @@ bool check_result(float* host_ref, float* gpu_ref, const int n)
   return true;
 }
 
+void setup_device()
+{
+  int dev = 0;
+  cudaDeviceProp device_prop;
+  CHECK(cudaGetDeviceProperties(&device_prop, dev));
+  std::cout << "Using Device : " << device_prop.name << std::endl;
+  CHECK(cudaSetDevice(dev));
+}
+
 int main() {
+  setup_device();
+
   float *data_a, *data_b, *data_c;
   float *host_a, *host_b, *host_ref, *gpu_ref;
-  int n_element = 1024;
+  int n_element = 1 << 24;
+  std::cout << "Vector size : " << n_element << std::endl;
   size_t n_bytes = n_element * sizeof(float); 
   
   // allocate memory for host
-  host_a = (float *)malloc(n_bytes);
-  host_b = (float *)malloc(n_bytes);
+  host_a   = (float *)malloc(n_bytes);
+  host_b   = (float *)malloc(n_bytes);
   host_ref = (float *)malloc(n_bytes);
-  gpu_ref = (float *)malloc(n_bytes);
+  gpu_ref  = (float *)malloc(n_bytes);
 
   // allocate memory for cuda device
   cudaMalloc((float**)&data_a, n_bytes);
@@ -72,13 +86,23 @@ int main() {
   cudaMemcpy(data_a, host_a, n_bytes, cudaMemcpyHostToDevice);
   cudaMemcpy(data_b, host_b, n_bytes, cudaMemcpyHostToDevice);
 
-  sum_array_on_host(host_a, host_b, host_ref, n_element);
+  {
+    scope_timer timer("sum_array_on_host");
+    sum_array_on_host(host_a, host_b, host_ref, n_element);
+  }
+
   // execute kernel
-  dim3 block(n_element);
-  dim3 grid(1);
-  sum_array_on_gpu<<<grid, block>>>(data_a, data_b, data_c);
-  // copy the result
-  cudaMemcpy(gpu_ref, data_c, n_bytes, cudaMemcpyDeviceToHost);
+  int i_len = 1024;
+  dim3 block(i_len);
+  dim3 grid((n_element + block.x - 1) / block.x);
+  {
+    scope_timer timer("sum_array_on_gpu");
+    sum_array_on_gpu<<<grid, block>>>(data_a, data_b, data_c);
+
+    CHECK(cudaDeviceSynchronize());
+    // copy the result
+    cudaMemcpy(gpu_ref, data_c, n_bytes, cudaMemcpyDeviceToHost);
+  } 
 
   auto result = check_result(host_ref, gpu_ref, n_element);
   if (result)
